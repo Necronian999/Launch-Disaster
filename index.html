@@ -1,0 +1,1041 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Lunar Launch</title>
+    <style>
+      :root {
+        --bg: #0b1020;
+        --panel: #151c33;
+        --text: #e6e9f5;
+        --muted: #8a93b5;
+        --ok: #4ade80;
+        --bad: #f87171;
+        --accent: #60a5fa;
+      }
+      body {
+        margin: 0;
+        font-family: system-ui, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+      }
+      main {
+        max-width: 840px;
+        margin: auto;
+        padding: 16px;
+      }
+      h1 {
+        margin: 0 0 8px;
+        letter-spacing: 0.05em;
+      }
+      #status {
+        background: var(--panel);
+        padding: 8px 12px;
+        border-radius: 6px;
+        margin-bottom: 12px;
+      }
+      .track span {
+        color: var(--muted);
+      }
+      .track .now {
+        color: var(--accent);
+        font-weight: 700;
+      }
+      .track .done {
+        color: var(--ok);
+      }
+      canvas {
+        display: block;
+        background: #000;
+        width: 100%;
+        border-radius: 8px;
+      }
+      .panel {
+        background: var(--panel);
+        border-radius: 8px;
+        padding: 12px 16px;
+        margin-top: 12px;
+      }
+      h2 {
+        color: var(--accent);
+        margin: 8px 0 4px;
+        font-size: 1.1rem;
+      }
+      .cards {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+      .card {
+        background: #1c2546;
+        border-radius: 6px;
+        padding: 8px 12px;
+      }
+      .card h3 {
+        margin: 0;
+        font-size: 0.95rem;
+      }
+      label {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+        margin: 4px 0;
+      }
+      input[type="number"] {
+        width: 80px;
+      }
+      button {
+        background: var(--accent);
+        border: 0;
+        padding: 8px 16px;
+        border-radius: 6px;
+        font-weight: 600;
+        cursor: pointer;
+        margin: 4px 4px 4px 0;
+      }
+      button:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+      .muted {
+        color: var(--muted);
+        font-size: 0.85rem;
+      }
+      .ok {
+        color: var(--ok);
+      }
+      .bad {
+        color: var(--bad);
+      }
+      @media (max-width: 640px) {
+        .cards {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Lunar Launch</h1>
+      <div id="status"></div>
+      <div id="screen"></div>
+    </main>
+
+    <script>
+      // Mission setup
+      const mission = {
+        goal: "Launch Orion on SLS, land on the Moon, gather data, and splash down in the Pacific Ocean",
+        funding: 1000, // $
+        deadlineMonths: 36,
+        baseBuildMonths: 30, // build time
+        travelMonths: 1,
+      };
+
+      // Funding sections
+      const sections = {
+        propulsion: {
+          name: "Space Launch System (SLS)",
+          subs: { engine: 120, structure: 100, inSpace: 60, fuel: 80 },
+          subNames: {
+            engine: "RS-25 engines",
+            structure: "Core stage & solid rocket boosters",
+            inSpace: "ICPS upper stage",
+            fuel: "Propellant (LH2 / LOX)",
+          },
+          help: "Four RS-25 engines on the core stage and two solid rocket boosters get you off Earth. The ICPS upper stage and propellant let you steer in flight.",
+        },
+        returnCapsule: {
+          name: "Orion heat shield",
+          recommended: 120,
+          help: "Protects the Orion capsule during reentry at nearly 25,000 mph.",
+        },
+        safety: {
+          name: "Orion launch abort & life support",
+          recommended: 100,
+          help: "Orion's Launch Abort System, cabin systems and backups. Also adds hull in flight.",
+        },
+        speed: {
+          name: "Rush production",
+          help: "Every $20M cuts one month of build time (up to 15).",
+        },
+        science: {
+          name: "Crew cameras & science",
+          recommended: 100,
+          help: "Cameras and instruments the crew uses to photograph and study the Moon. Sets how much data you bring home.",
+        },
+        landing: {
+          name: "Lunar lander",
+          recommended: 120,
+          help: "Touching down safely on the Moon.",
+        },
+        emergency: {
+          name: "Emergency funds",
+          help: "Spent on problem choices. Unallocated money goes here too.",
+        },
+      };
+
+      // Phases
+      const phases = [
+        {
+          id: "prep",
+          name: "Preparation",
+          scene: "pad",
+          tutorial:
+            "You have $" +
+            mission.funding +
+            "M and " +
+            mission.deadlineMonths +
+            " months to build SLS and Orion and stack them in the Vehicle Assembly Building at Kennedy Space Center. Split the money across the sections. Underfunded parts can fail later, and building takes time out of your deadline unless you pay to rush it.",
+        },
+        {
+          id: "launch",
+          name: "Launch",
+          scene: "pad",
+          tutorial:
+            "SLS stands on Launch Complex 39B with Orion on top. Your four astronauts, a commander, a pilot and two mission specialists, strap in. The RS-25 engines and solid rocket boosters have to get you off the ground. If something goes wrong, pick a choice: each costs money, time, or risk.",
+        },
+        {
+          id: "toMoon",
+          name: "Flight to the Moon",
+          scene: "flight",
+          tutorial:
+            "Orion heads for the Moon. Use W A S D to dodge asteroids. Steering burns fuel, and every hit costs hull. Run out of hull and the mission is lost.",
+        },
+        {
+          id: "lunar",
+          name: "Lunar surface",
+          scene: "lunar",
+          tutorial:
+            "Touchdown. Your instruments gather data. Lander and science funding decide how this goes.",
+        },
+        {
+          id: "toEarth",
+          name: "Return to Earth",
+          scene: "flight",
+          tutorial:
+            "Head home. Same controls, more asteroids. Then Orion's heat shield has to survive reentry at nearly 25,000 mph before splashdown in the Pacific Ocean.",
+        },
+      ];
+
+      //  Problems
+      // 3 randomly per game, hidden till phase.
+      // history = what really happened on Artemis II, source = where that came from
+      const problems = [
+        {
+          phase: "launch",
+          text: "Fueling test: liquid hydrogen is leaking from the SLS core stage, and the countdown stopped itself at T-5:15.",
+          history:
+            "February 2026: hydrogen leaks stopped Artemis II's first fueling test at T-5 minutes 15 seconds. NASA ran a second rehearsal and pushed the launch out of February.",
+          source:
+            "https://www.fox13news.com/news/artemis-ii-launch-delayed-march-after-issues-during-wet-dress-rehearsal",
+          choices: [
+            { label: "Run a second rehearsal", monthsCost: 1 },
+            { label: "Replace the leaking seals", fundsCost: 60 },
+            {
+              label: "Fuel up and launch anyway",
+              check: "propulsion",
+              lose: "The leak got worse and the rocket couldn't be fueled.",
+            },
+          ],
+        },
+        {
+          phase: "launch",
+          text: "Helium flow to the ICPS upper stage was interrupted. Helium pressurizes the upper stage's fuel tanks.",
+          history:
+            "February 21, 2026: engineers found the helium flow problem after the second rehearsal. Artemis II's rocket rolled back to the Vehicle Assembly Building and the launch moved to April.",
+          source:
+            "https://www.astronomy.com/space-exploration/artemis-2-launch-delayed-again/",
+          choices: [
+            { label: "Roll SLS back to the Vehicle Assembly Building", monthsCost: 2 },
+            {
+              label: "Launch and hope it holds",
+              check: "propulsion",
+              lose: "The ICPS lost tank pressure and couldn't push Orion toward the Moon.",
+            },
+          ],
+        },
+        {
+          phase: "launch",
+          text: "Launch day: the Eastern Range can't communicate with the rocket's flight termination system, the safety system that destroys the rocket if it veers off course.",
+          history:
+            "April 1, 2026: on Artemis II's launch day, the Eastern Range lost contact with the system. A team pulled space shuttle-era equipment out of the Vehicle Assembly Building to verify it, and the range went GO.",
+          source: "https://www.ktvu.com/news/artemis-ii-moon-mission-updates",
+          choices: [
+            { label: "Bring out space shuttle-era equipment to test it", fundsCost: 20 },
+            { label: "Scrub and wait for the next launch window", monthsCost: 1 },
+          ],
+        },
+        {
+          phase: "launch",
+          text: "A temperature reading from one of the two batteries on Orion's Launch Abort System is out of range.",
+          history:
+            "April 1, 2026: engineers decided it was most likely a bad sensor, and Artemis II lifted off at 6:35 p.m. EDT from Launch Complex 39B.",
+          source: "https://www.cbsnews.com/live-updates/nasa-artemis-ii-launch/",
+          choices: [
+            {
+              label: "Review the data and go",
+              check: "safety",
+              lose: "It wasn't just the sensor. The abort system wasn't safe to fly.",
+            },
+            { label: "Scrub and swap the battery", monthsCost: 1 },
+          ],
+        },
+        {
+          phase: "toMoon",
+          text: "Orion's toilet stopped handling urine after reaching orbit.",
+          history:
+            "Artemis II Mission Specialist Christina Koch fixed the toilet's urine function with guidance from Mission Control.",
+          source:
+            "https://www.space.com/space-exploration/artemis/the-breakout-star-of-nasas-artemis-2-mission-to-the-moon-isnt-an-astronaut-its-the-space-toilet",
+          choices: [
+            {
+              label: "Crew repairs it with Mission Control",
+              check: "safety",
+              onFail: "science",
+              lose: "The repair didn't hold, and crew time went to the toilet instead of science.",
+            },
+            { label: "Use backup collection bags", science: -20 },
+          ],
+        },
+        {
+          phase: "toMoon",
+          text: "The cabin is down to 65°F (18°C), and the crew is digging through their bags for long sleeves.",
+          history:
+            "Early in the Artemis II flight, the Orion capsule's cabin ran cold until Mission Control raised the temperature.",
+          source:
+            "https://www.scientificamerican.com/article/nasas-artemis-ii-was-a-major-success-so-why-couldnt-the-crew-flush-the-toilet/",
+          choices: [
+            {
+              label: "Mission Control adjusts the thermal system",
+              check: "safety",
+              onFail: "science",
+              lose: "The fix didn't work, and a cold crew got less science done.",
+            },
+            { label: "Layer up and keep working", science: -10 },
+          ],
+        },
+        {
+          phase: "toMoon",
+          text: "Venting the wastewater tank stopped after only 3%. Ice may be blocking the vent line.",
+          history:
+            "Flight controllers suspected ice in the vent line. The toilet stayed usable, and the crew was told to use backup collection devices overnight.",
+          source: "https://www.channelstv.com/2026/04/09/how-artemis-ii-crew-battled-faulty-space-toilet",
+          choices: [
+            {
+              label: "Try to clear the vent line",
+              check: "safety",
+              onFail: "science",
+              lose: "The line stayed blocked and the crew lost time dealing with it.",
+            },
+            { label: "Use backup collection devices", science: -10 },
+          ],
+        },
+        {
+          phase: "toMoon",
+          text: "Your commander reports that neither of the two Microsoft Outlook email clients on board is working.",
+          history:
+            "Artemis II Commander Reid Wiseman reported that neither of his two Outlook clients worked on the way to the Moon.",
+          source:
+            "https://www.yahoo.com/news/science/article/a-wonky-toilet-microsoft-outlook-obstacles-and-more-the-unexpected-issues-popping-up-on-the-artemis-ii-moon-mission-191146071.html",
+          choices: [
+            { label: "Mission Control IT connects remotely", fundsCost: 5 },
+            { label: "Ignore email. You're going to the Moon.", science: -5 },
+          ],
+        },
+        {
+          phase: "lunar",
+          text: "The landing site is a boulder field.",
+          choices: [
+            {
+              label: "Land anyway",
+              check: "landing",
+              lose: "The lander tipped over.",
+            },
+            {
+              label: "Search for a new site",
+              monthsCost: 1,
+              check: "landing",
+              onFail: "science",
+              lose: "You landed far from the good samples.",
+            },
+          ],
+        },
+        {
+          phase: "lunar",
+          text: "The sample drill jammed.",
+          choices: [
+            {
+              label: "Force it",
+              check: "science",
+              onFail: "science",
+              lose: "The drill broke. You lost half the samples.",
+            },
+            { label: "Leave the deep samples", science: -30 },
+            { label: "Remote repair", fundsCost: 60 },
+          ],
+        },
+        {
+          phase: "toEarth",
+          text: "Orion's heat shield uses a design that lost chunks of charred material on an uncrewed test flight.",
+          history:
+            "Orion's heat shield lost charred chunks on the uncrewed Artemis I flight. NASA flew Artemis II with the same design and changed the reentry path instead of waiting for a redesign. The capsule, named Integrity, splashed down safely off San Diego on April 10, 2026.",
+          source: "https://fortune.com/2026/04/10/artemis-ii-lands-pacific-heat-shield-issues/",
+          choices: [
+            {
+              label: "Fly a modified reentry path",
+              check: "returnCapsule",
+              lose: "The heat shield failed during reentry.",
+            },
+            { label: "Wait for a heat shield redesign", monthsCost: 6 },
+          ],
+        },
+      ];
+
+      //  Drawing
+      const TAU = Math.PI * 2;
+      const stars = Array.from({ length: 160 }, () => ({
+        x: Math.random() * 800,
+        y: Math.random() * 400,
+        z: 0.2 + Math.random() * 0.8,
+      }));
+      const wrap = (v, size) => ((v % size) + size) % size;
+
+      function circle(ctx, x, y, r) {
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, TAU);
+        ctx.fill();
+      }
+      function ellipse(ctx, x, y, rx, ry) {
+        ctx.beginPath();
+        ctx.ellipse(x, y, rx, ry, 0, 0, TAU);
+        ctx.fill();
+      }
+      function poly(ctx, pts) {
+        ctx.beginPath();
+        pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      // Stars scroll left
+      function drawStars(ctx, w, h, offset = 0) {
+        ctx.fillStyle = "#000";
+        ctx.fillRect(0, 0, w, h);
+        ctx.fillStyle = "#fff";
+        for (const s of stars)
+          ctx.fillRect(
+            wrap(s.x - offset * s.z, w),
+            (s.y * h) / 400,
+            s.z * 2,
+            s.z * 2,
+          );
+      }
+
+      function drawEarth(ctx, x, y, r) {
+        ctx.fillStyle = "#2563eb";
+        circle(ctx, x, y, r);
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, TAU);
+        ctx.clip();
+        ctx.fillStyle = "#16a34a";
+        for (const [cx, cy, w, h] of [
+          [-0.35, -0.3, 0.35, 0.22],
+          [-0.2, 0.15, 0.18, 0.3],
+          [0.35, -0.2, 0.3, 0.25],
+          [0.3, 0.4, 0.2, 0.15],
+        ])
+          ellipse(ctx, x + cx * r, y + cy * r, w * r, h * r);
+        ctx.restore();
+      }
+
+      function drawMoon(ctx, x, y, r) {
+        ctx.fillStyle = "#c4c4c4";
+        circle(ctx, x, y, r);
+        ctx.fillStyle = "#9a9a9a";
+        for (const [cx, cy, cr] of [
+          [-0.3, -0.2, 0.18],
+          [0.35, 0.1, 0.12],
+          [-0.1, 0.4, 0.1],
+          [0.1, -0.45, 0.08],
+          [-0.5, 0.15, 0.07],
+        ])
+          circle(ctx, x + cx * r, y + cy * r, cr * r);
+      }
+
+      // Side view spaceship
+      function drawShip(ctx, x, y) {
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.fillStyle = "#ff8c1a";
+        poly(ctx, [
+          [-14, -5],
+          [-30, 0],
+          [-14, 5],
+        ]);
+        ctx.fillStyle = "#ffe066";
+        poly(ctx, [
+          [-14, -3],
+          [-23, 0],
+          [-14, 3],
+        ]);
+        ctx.fillStyle = "#e63946";
+        poly(ctx, [
+          [-13, -6],
+          [-2, -6],
+          [-15, -15],
+        ]);
+        poly(ctx, [
+          [-13, 6],
+          [-2, 6],
+          [-15, 15],
+        ]);
+        ctx.fillStyle = "#e5e7eb";
+        ctx.beginPath();
+        ctx.moveTo(20, 0);
+        ctx.quadraticCurveTo(8, -10, -14, -7);
+        ctx.lineTo(-14, 7);
+        ctx.quadraticCurveTo(8, 10, 20, 0);
+        ctx.fill();
+        ctx.fillStyle = "#0ea5e9";
+        circle(ctx, 5, -1, 3.5);
+        ctx.restore();
+      }
+
+      // Upright rocket
+      function drawRocket(ctx, x, y, s, flame) {
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.scale(s, s);
+        if (flame) {
+          ctx.fillStyle = "#ff8c1a";
+          poly(ctx, [
+            [-7, 2],
+            [0, 45],
+            [7, 2],
+          ]);
+          ctx.fillStyle = "#ffe066";
+          poly(ctx, [
+            [-4, 2],
+            [0, 26],
+            [4, 2],
+          ]);
+        }
+        ctx.fillStyle = "#c1121f";
+        poly(ctx, [
+          [-8, -4],
+          [-17, 4],
+          [-8, -24],
+        ]);
+        poly(ctx, [
+          [8, -4],
+          [17, 4],
+          [8, -24],
+        ]);
+        ctx.fillStyle = "#e5e7eb";
+        ctx.fillRect(-8, -70, 16, 70);
+        ctx.fillStyle = "#c1121f";
+        poly(ctx, [
+          [-8, -70],
+          [0, -94],
+          [8, -70],
+        ]);
+        ctx.fillStyle = "#38bdf8";
+        circle(ctx, 0, -52, 4);
+        ctx.restore();
+      }
+
+      function makeAsteroid(difficulty) {
+        return {
+          x: 850,
+          y: Math.random() * 400,
+          r: 12 + Math.random() * 22,
+          vx: -(3 + Math.random() * 3) * difficulty,
+          vy: (Math.random() - 0.5) * 0.8,
+        };
+      }
+
+      function drawAsteroid(ctx, a) {
+        ctx.fillStyle = "#7a6a58";
+        circle(ctx, a.x, a.y, a.r);
+        ctx.strokeStyle = "#3d3229";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+
+      function drawPad(ctx) {
+        ctx.fillStyle = "#1f2937";
+        ctx.fillRect(0, 240, 800, 60);
+        ctx.fillStyle = "#6b7280";
+        ctx.fillRect(440, 100, 14, 140);
+        ctx.fillStyle = "#4b5563";
+        ctx.fillRect(355, 232, 110, 10);
+      }
+
+      // Scenes
+      const scenes = {
+        pad: (ctx) => {
+          drawStars(ctx, 800, 300);
+          drawMoon(ctx, 680, 60, 26);
+          drawPad(ctx);
+          drawRocket(ctx, 400, 232, 1.5, false);
+        },
+        launch: (ctx) => {
+          drawStars(ctx, 800, 300);
+          drawPad(ctx);
+          ctx.fillStyle = "rgba(200,200,205,0.5)";
+          for (const [x, y, r] of [
+            [380, 235, 18],
+            [420, 238, 20],
+            [400, 228, 16],
+            [355, 240, 14],
+            [445, 240, 14],
+          ])
+            circle(ctx, x, y, r);
+          drawRocket(ctx, 400, 160, 1.5, true);
+        },
+        flight: (ctx) => {
+          drawStars(ctx, 800, 300);
+          drawRocket(ctx, 400, 200, 1.5, true);
+        },
+        lunar: (ctx) => {
+          drawStars(ctx, 800, 300);
+          drawEarth(ctx, 660, 70, 34);
+          ctx.fillStyle = "#9ca3af";
+          ctx.fillRect(0, 220, 800, 80);
+          ctx.fillStyle = "#6b7280";
+          for (const [x, y, rx, ry] of [
+            [120, 255, 40, 8],
+            [560, 272, 60, 10],
+            [700, 240, 25, 5],
+          ])
+            ellipse(ctx, x, y, rx, ry);
+          // lander
+          ctx.strokeStyle = "#d1d5db";
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.moveTo(310, 200);
+          ctx.lineTo(296, 225);
+          ctx.moveTo(350, 200);
+          ctx.lineTo(364, 225);
+          ctx.stroke();
+          ctx.fillStyle = "#eab308";
+          ctx.fillRect(306, 185, 48, 22);
+          ctx.fillStyle = "#e5e7eb";
+          ctx.fillRect(316, 163, 28, 22);
+          // flag
+          ctx.fillRect(450, 168, 2, 54);
+          ctx.fillStyle = "#2563eb";
+          ctx.fillRect(452, 170, 40, 24);
+        },
+        success: (ctx) => {
+          ctx.fillStyle = "#60a5fa";
+          ctx.fillRect(0, 0, 800, 200);
+          ctx.fillStyle = "#fde68a";
+          circle(ctx, 680, 50, 30);
+          ctx.fillStyle = "#1d4ed8";
+          ctx.fillRect(0, 200, 800, 100);
+          ctx.fillStyle = "#e5e7eb";
+          poly(ctx, [
+            [380, 210],
+            [388, 182],
+            [412, 182],
+            [420, 210],
+          ]);
+          ctx.fillStyle = "#38bdf8";
+          circle(ctx, 400, 194, 4);
+        },
+        fail: (ctx) => {
+          drawStars(ctx, 800, 300);
+          ctx.fillStyle = "#f97316";
+          circle(ctx, 400, 150, 50);
+          ctx.fillStyle = "#fde047";
+          circle(ctx, 400, 150, 28);
+          ctx.fillStyle = "#94a3b8";
+          for (const [x, y] of [
+            [300, 90],
+            [500, 110],
+            [330, 220],
+            [480, 210],
+            [560, 160],
+            [250, 160],
+          ])
+            ctx.fillRect(x, y, 10, 5);
+        },
+      };
+
+      //  Screens
+      const screen = document.getElementById("screen");
+
+      function setScreen(scene, html) {
+        screen.innerHTML =
+          (scene
+            ? `<canvas id="scene" width="800" height="300"></canvas>`
+            : "") + `<div class="panel">${html}</div>`;
+        if (scene) scene(document.getElementById("scene").getContext("2d"));
+      }
+      function currentScene() {
+        const p = phases[state.phase];
+        return scenes[p.id === "launch" ? "launch" : p.scene];
+      }
+
+      //  State
+      let state;
+
+      function startGame() {
+        state = {
+          alloc: {
+            engine: 0,
+            structure: 0,
+            inSpace: 0,
+            fuel: 0,
+            returnCapsule: 0,
+            safety: 0,
+            speed: 0,
+            science: 0,
+            landing: 0,
+            emergency: 0,
+          },
+          monthsLeft: mission.deadlineMonths,
+          phase: 0,
+          science: 0,
+          activeProblems: drawProblems(3),
+          log: [],
+        };
+        runPhase();
+      }
+
+      function drawProblems(count) {
+        return [...problems].sort(() => Math.random() - 0.5).slice(0, count);
+      }
+
+      //  Funding helpers
+      function recommended(id) {
+        const s = sections[id];
+        return s.subs
+          ? Object.values(s.subs).reduce((a, b) => a + b, 0)
+          : s.recommended;
+      }
+
+      function allocTotal(id) {
+        const s = sections[id];
+        return s.subs
+          ? Object.keys(s.subs).reduce((sum, k) => sum + state.alloc[k], 0)
+          : state.alloc[id];
+      }
+
+      function spent() {
+        return Object.values(state.alloc).reduce((a, b) => a + b, 0);
+      }
+
+      function buildMonths() {
+        return (
+          mission.baseBuildMonths -
+          Math.min(15, Math.floor(state.alloc.speed / 20))
+        );
+      }
+
+      function checkChance(id) {
+        const ratio = Math.min(1.2, allocTotal(id) / recommended(id));
+        const safetyBonus =
+          0.1 * Math.min(1, state.alloc.safety / recommended("safety"));
+        return Math.min(0.95, 0.1 + 0.75 * ratio + safetyBonus);
+      }
+
+      //  Phase flow
+      function runPhase() {
+        const p = phases[state.phase];
+        renderStatus();
+        showTutorial(p, phaseContent[p.id]);
+      }
+
+      function showTutorial(p, onContinue) {
+        setScreen(
+          scenes[p.scene],
+          `<h2>${p.name}</h2><p>${p.tutorial}</p><button id="go">Continue</button>`,
+        );
+        document.getElementById("go").onclick = onContinue;
+      }
+
+      function showMessage(html, onContinue) {
+        setScreen(currentScene(), `${html}<button id="go">Continue</button>`);
+        document.getElementById("go").onclick = onContinue;
+      }
+
+      const phaseContent = {
+        prep: renderPrep,
+        launch: () =>
+          showMessage(
+            `<h2>3... 2... 1... Liftoff!</h2><p>SLS clears the tower at Launch Complex 39B and climbs out of Earth's atmosphere.</p>`,
+            afterPhase,
+          ),
+        toMoon: () => {
+          state.monthsLeft -= mission.travelMonths;
+          runMinigame(1, "moon", afterPhase);
+        },
+        lunar: () => {
+          showMessage(
+            `<h2>On the Moon</h2><p>Your instruments have <b>${state.science}</b> data points so far.</p>`,
+            afterPhase,
+          );
+        },
+        toEarth: () => {
+          state.monthsLeft -= mission.travelMonths;
+          runMinigame(1.6, "earth", afterPhase);
+        },
+      };
+
+      // Post-phase
+      function afterPhase() {
+        renderStatus();
+        const id = phases[state.phase].id;
+        const problem = state.activeProblems.find(
+          (pr) => pr.phase === id && !pr.done,
+        );
+        problem ? renderProblem(problem) : nextPhase();
+      }
+
+      function nextPhase() {
+        state.phase++;
+        if (state.monthsLeft < 0)
+          return endGame(false, "You ran past the deadline.");
+        if (state.phase >= phases.length)
+          return endGame(
+            true,
+            "Splashdown in the Pacific Ocean! Orion, the crew and the data made it home.",
+          );
+        runPhase();
+      }
+
+      //  Prep screen
+      function renderPrep() {
+        let html = `<h2>Allocate $${mission.funding}M</h2><div class="cards">`;
+        for (const [id, s] of Object.entries(sections)) {
+          html += `<div class="card"><h3>${s.name}</h3><p class="muted">${s.help}</p>`;
+          const keys = s.subs ? Object.keys(s.subs) : [id];
+          for (const k of keys) {
+            const rec = s.subs ? s.subs[k] : s.recommended;
+            html += `<label><span>${s.subs ? s.subNames[k] : "Amount"}${rec ? ` <span class="muted">(rec. $${rec}M)</span>` : ""}</span>
+        <input type="number" min="0" step="10" data-key="${k}" value="${state.alloc[k]}"></label>`;
+          }
+          html += `</div>`;
+        }
+        setScreen(
+          scenes.pad,
+          html +
+            `</div><p id="summary"></p><button id="go">Build and launch</button>`,
+        );
+        screen.oninput = (e) => {
+          if (e.target.dataset.key)
+            state.alloc[e.target.dataset.key] = Math.max(
+              0,
+              Number(e.target.value) || 0,
+            );
+          updatePrepSummary();
+        };
+        document.getElementById("go").onclick = finishPrep;
+        updatePrepSummary();
+      }
+
+      function updatePrepSummary() {
+        const left = mission.funding - spent();
+        const spare =
+          state.monthsLeft - buildMonths() - 2 * mission.travelMonths;
+        document.getElementById("summary").innerHTML =
+          `<span class="${left < 0 ? "bad" : ""}">Unallocated: $${left}M</span> · Build time: ${buildMonths()} months · ` +
+          `<span class="${spare < 0 ? "bad" : ""}">Spare months: ${spare}</span>`;
+        document.getElementById("go").disabled = left < 0;
+      }
+
+      function finishPrep() {
+        screen.oninput = null;
+        state.alloc.emergency += mission.funding - spent();
+        state.monthsLeft -= buildMonths();
+        // Data the instruments can gather; in-flight problems can cut it
+        state.science = Math.round(
+          100 * Math.min(1.5, allocTotal("science") / recommended("science")),
+        );
+        state.log.push(`Built the spacecraft in ${buildMonths()} months.`);
+        afterPhase();
+      }
+
+      //  Problems
+      function renderProblem(problem) {
+        setScreen(
+          currentScene(),
+          `<h2 class="bad">⚠ Problem!</h2><p>${problem.text}</p>` +
+            problem.choices
+              .map((c, i) => {
+                const costs = [
+                  c.fundsCost && `$${c.fundsCost}M`,
+                  c.monthsCost && `${c.monthsCost} mo`,
+                  c.check && `risk: ${sections[c.check].name}`,
+                ]
+                  .filter(Boolean)
+                  .join(", ");
+                return `<button data-i="${i}" ${(c.fundsCost || 0) > state.alloc.emergency ? "disabled" : ""}>${c.label}${costs ? ` (${costs})` : ""}</button>`;
+              })
+              .join(""),
+        );
+        screen
+          .querySelectorAll("button")
+          .forEach(
+            (b) =>
+              (b.onclick = () =>
+                chooseOption(problem, problem.choices[b.dataset.i])),
+          );
+      }
+
+      function chooseOption(problem, choice) {
+        problem.done = true;
+        state.alloc.emergency -= choice.fundsCost || 0;
+        state.monthsLeft -= choice.monthsCost || 0;
+        state.science = Math.max(0, state.science + (choice.science || 0));
+        const ok = !choice.check || Math.random() < checkChance(choice.check);
+        state.log.push(
+          `${problem.text} → ${choice.label}: ${ok ? "worked" : "failed"}`,
+        );
+        const real = problem.history
+          ? `<br><span class="muted"><b>This really happened on Artemis II:</b> ${problem.history}` +
+            ` <a href="${problem.source}" target="_blank" rel="noopener">Source</a></span>`
+          : "";
+        if (!ok && choice.onFail !== "science")
+          return endGame(false, choice.lose + real);
+        if (!ok) state.science = Math.floor(state.science / 2);
+        showMessage(
+          `<p class="${ok ? "ok" : "bad"}">${ok ? (choice.check ? "It worked." : "Done.") : choice.lose}</p><p>${real}</p>`,
+          afterPhase,
+        );
+      }
+
+      //  Asteroid minigame
+      function runMinigame(difficulty, target, onDone) {
+        setScreen(
+          null,
+          `<canvas id="game" width="800" height="400"></canvas><p class="muted">W A S D to move. Steering burns fuel.</p>`,
+        );
+        const ctx = document.getElementById("game").getContext("2d");
+        const a = state.alloc,
+          subs = sections.propulsion.subs;
+        const ship = { x: 80, y: 200 };
+        const maxHull = 3 + Math.floor((a.safety + a.structure) / 60);
+        let hull = maxHull;
+        let fuel =
+          100 *
+          Math.min(1.5, (a.inSpace + a.fuel) / (subs.inSpace + subs.fuel));
+        const maxFuel = Math.max(fuel, 1);
+        let frameNo = 0,
+          hitCooldown = 0;
+        const tripFrames = 1800,
+          rocks = [],
+          keys = {};
+        const onKey = (e) => (keys[e.key.toLowerCase()] = e.type === "keydown");
+        addEventListener("keydown", onKey);
+        addEventListener("keyup", onKey);
+        const [drawFrom, drawTo] =
+          target === "moon" ? [drawEarth, drawMoon] : [drawMoon, drawEarth];
+
+        function frame() {
+          const dx = (keys.d ? 1 : 0) - (keys.a ? 1 : 0),
+            dy = (keys.s ? 1 : 0) - (keys.w ? 1 : 0);
+          if ((dx || dy) && fuel > 0) {
+            ship.x += dx * 4;
+            ship.y += dy * 4;
+            fuel -= 0.08;
+          }
+          ship.x = Math.max(20, Math.min(500, ship.x));
+          ship.y = Math.max(20, Math.min(380, ship.y));
+
+          frameNo++;
+          if (Math.random() < 0.035 * difficulty)
+            rocks.push(makeAsteroid(difficulty));
+          for (const r of rocks) {
+            r.x += r.vx;
+            r.y += r.vy;
+          }
+          while (rocks.length && rocks[0].x < -60) rocks.shift();
+
+          if (hitCooldown > 0) hitCooldown--;
+          else if (
+            rocks.some((r) => Math.hypot(r.x - ship.x, r.y - ship.y) < r.r + 8)
+          ) {
+            hull--;
+            hitCooldown = 60;
+          }
+
+          // Draw worlds
+          const prog = frameNo / tripFrames;
+          drawStars(ctx, 800, 400, frameNo * 2 * difficulty);
+          drawFrom(ctx, 60 - prog * 600, 200, 130);
+          drawTo(ctx, 1000 - 320 * prog, 200, 110);
+          for (const r of rocks) drawAsteroid(ctx, r);
+          drawShip(ctx, ship.x, ship.y);
+
+          // HUD
+          ctx.fillStyle = "rgba(0,0,0,0.55)";
+          ctx.fillRect(8, 8, 130, 52);
+          ctx.fillStyle = "#fff";
+          ctx.font = "bold 14px system-ui";
+          ctx.fillText(
+            `HULL  ${Math.round((100 * Math.max(0, hull)) / maxHull)}%`,
+            16,
+            29,
+          );
+          ctx.fillText(
+            `FUEL  ${Math.round((100 * Math.max(0, fuel)) / maxFuel)}%`,
+            16,
+            51,
+          );
+
+          if (hull <= 0) {
+            removeEventListener("keydown", onKey);
+            removeEventListener("keyup", onKey);
+            return endGame(false, "Your ship was destroyed by asteroids.");
+          }
+          if (frameNo >= tripFrames) {
+            removeEventListener("keydown", onKey);
+            removeEventListener("keyup", onKey);
+            state.log.push(
+              `Reached ${target === "moon" ? "the Moon" : "Earth"} with ${hull} hull left.`,
+            );
+            return onDone();
+          }
+          requestAnimationFrame(frame);
+        }
+        requestAnimationFrame(frame);
+      }
+
+      //  End
+      function endGame(success, reason) {
+        const score = success
+          ? state.science * 10 + state.alloc.emergency + state.monthsLeft * 20
+          : 0;
+        setScreen(
+          success ? scenes.success : scenes.fail,
+          `<h2 class="${success ? "ok" : "bad"}">${success ? "Mission success!" : "Mission failed"}</h2><p>${reason}</p>` +
+            `<p><b>Score: ${score}</b></p><ul>${state.log.map((l) => `<li>${l}</li>`).join("")}</ul><button id="go">Play again</button>`,
+        );
+        document.getElementById("go").onclick = startGame;
+      }
+
+      function renderStatus() {
+        const cur = Math.min(state.phase, phases.length - 1);
+        document.getElementById("status").innerHTML =
+          `<div class="track">${phases.map((p, i) => `<span class="${i === cur ? "now" : i < cur ? "done" : ""}">${p.name}</span>`).join(" › ")}</div>` +
+          `<div class="muted">${mission.goal} · Emergency funds: $${state.alloc.emergency}M · Months left: ${state.monthsLeft}</div>`;
+      }
+
+      startGame();
+      console.assert(
+        new Set(drawProblems(3)).size === 3,
+        "drawProblems should not repeat",
+      );
+      console.assert(
+        recommended("propulsion") === 360,
+        "propulsion recommended is the sum of its subs",
+      );
+    </script>
+  </body>
+</html>
